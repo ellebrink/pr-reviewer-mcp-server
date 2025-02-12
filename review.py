@@ -12,13 +12,44 @@ REPOSITORY = "pr-agent-test"
 PR_ID = 1  # The PR number you want to review
 
 # AI Review Prompt
-REVIEW_PROMPT = """Please review these code changes and provide best practices feedback.
-Use relaxed language and make it sound non-robotic.
-Keep the feedback very concise and to the point.
+REVIEW_PROMPT = """Please review these code changes and provide feedback in the following JSON format:
 
-!! IMPORTANT: Include exactly which lines of code you are referring to in your feedback. !!
+{
+    "files": {
+        "path/to/file1.ext": [
+            {
+                "line_number": 23,
+                "line_content": "the actual code line or block being referenced",
+                "comment": "your review comment about this specific code"
+            },
+            {
+                "line_number": 42,
+                "line_content": "the actual code line or block being referenced",
+                "comment": "your review comment about this specific code"
+            },
+            ...
+        ],
+        "path/to/file2.ext": [
+            {
+                "line_number": 15,
+                "line_content": "the actual code line or block being referenced",
+                "comment": "your review comment about this specific code"
+            },
+            ...
+        ],
+        ...
+    }
+}
 
-Changes: `{diff_content}`"""
+Important guidelines:
+1. Keep feedback concise and to the point
+2. Use relaxed, non-robotic language in comments
+3. Find unused code and imports
+4. Find code that does not follow best practices
+5. Suggest performance improvements if possible
+6. Suggest more legible code if possible
+
+Here is the PR diff: `{diff_content}`"""
 
 class PRReviewer:
     def __init__(self, bitbucket_url: str, username: str, password: str, openrouter_api_key: str):
