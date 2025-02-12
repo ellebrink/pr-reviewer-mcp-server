@@ -149,7 +149,8 @@ class PRReviewer:
     def get_pr_changes(self, project: str, repository: str, pr_id: int) -> str:
         """Get all changes from a pull request and format them as a diff-like string."""
         try:
-            url = f"{self.bitbucket.url}/repositories/{project}/{repository}/pullrequests/{pr_id}/diff"
+            # See docs: https://developer.atlassian.com/server/bitbucket/rest/v905/api-group-pull-requests/#api-api-latest-projects-projectkey-repos-repositoryslug-pull-requests-pullrequestid-diff-path-get
+            url = f"{self.bitbucket.url}/repositories/{project}/{repository}/pullrequests/{pr_id}/diff?withComments=false"
             response = requests.get(url, auth=(self.bitbucket.username, self.bitbucket.password))
             response.raise_for_status()
             return response.text
