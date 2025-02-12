@@ -11,6 +11,15 @@ PROJECT = "pr-agent-test-repo"
 REPOSITORY = "pr-agent-test"
 PR_ID = 1  # The PR number you want to review
 
+# AI Review Prompt
+REVIEW_PROMPT = """Please review these code changes and provide best practices feedback.
+Use relaxed language and make it sound non-robotic.
+Keep the feedback very concise and to the point.
+
+!! IMPORTANT: Include exactly which lines of code you are referring to in your feedback. !!
+
+Changes: `{diff_content}`"""
+
 class PRReviewer:
     def __init__(self, bitbucket_url: str, username: str, password: str, openrouter_api_key: str):
         self.bitbucket = Bitbucket(
@@ -43,25 +52,14 @@ class PRReviewer:
         print("diff_content: %s", diff_content)
         print("[diff_content END]")
         print("=" * 80)
-
-
+        
         try:
-            prompt = f"""Please review these code changes and provide:
-1. Summary of changes
-2. Potential issues or bugs
-3. Style and best practice recommendations
-4. Security concerns (if any)
-5. Performance implications (if any)
-
-Changes:
-`{diff_content}`"""
-
             completion = self.openai_client.chat.completions.create(
                 model="deepseek/deepseek-r1:free",
                 messages=[
                     {
                         "role": "user",
-                        "content": prompt
+                        "content": REVIEW_PROMPT.format(diff_content=diff_content)
                     }
                 ]
             )
@@ -87,8 +85,7 @@ def main():
     if not changes:
         print("Failed to fetch PR changes")
         return
-
-
+    
     # Get AI review
     review = reviewer.get_deepseek_review(changes)
     if not review:
