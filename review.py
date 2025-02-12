@@ -1,11 +1,13 @@
 import os
+from dotenv import load_dotenv
 import requests
 from abc import ABC, abstractmethod
 from atlassian import Bitbucket
-from dotenv import load_dotenv
 from openai import OpenAI
 from typing import Optional
+import json
 
+# Load environment variables from .env file
 load_dotenv()
 
 # Configuration
@@ -27,11 +29,6 @@ REVIEW_PROMPT = """Please review these code changes and provide feedback in the 
                 "line_content": "the actual code line or block being referenced",
                 "comment": "your review comment about this specific code"
             },
-            {
-                "line_number": 42,
-                "line_content": "the actual code line or block being referenced",
-                "comment": "your review comment about this specific code"
-            },
             ...
         ],
         "path/to/file2.ext": [
@@ -46,13 +43,14 @@ REVIEW_PROMPT = """Please review these code changes and provide feedback in the 
     }
 }
 
-Important guidelines:
-1. Keep feedback concise and to the point
-2. Use relaxed, non-robotic language in comments
-3. Find unused code and imports
-4. Find code that does not follow best practices
-5. Suggest performance improvements if possible
-6. Suggest more legible code if possible
+!! IMPORTANT guidelines:
+1. ONLY respond with the JSON format
+2. Keep feedback concise and to the point
+3. Use relaxed, non-robotic language in comments
+4. Find unused code and imports
+5. Find code that does not follow best practices
+6. Suggest performance improvements if possible
+7. Suggest more legible code if possible
 
 Here is the PR diff: `{diff_content}`"""
 
@@ -67,7 +65,11 @@ class AIReviewer(ABC):
 class OpenRouterReviewer(AIReviewer):
     """OpenRouter API implementation"""
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: Optional[str] = None):
+        api_key = api_key or os.getenv('OPENROUTER_API_KEY')
+        if not api_key:
+            raise ValueError("OpenRouter API key must be provided either directly or via OPENROUTER_API_KEY environment variable")
+        
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key
@@ -75,6 +77,7 @@ class OpenRouterReviewer(AIReviewer):
 
     def get_review(self, diff_content: str) -> str:
         try:
+            print("Sending request to OpenRouter API...")
             completion = self.client.chat.completions.create(
                 model="deepseek/deepseek-r1:free",
                 messages=[
@@ -84,22 +87,35 @@ class OpenRouterReviewer(AIReviewer):
                     }
                 ]
             )
-            return completion.choices[0].message.content
+            print("Received response from OpenRouter API")
+            print(f"Response: {completion}")
+            
+            if hasattr(completion.choices[0].message, 'content'):
+                return completion.choices[0].message.content
+            else:
+                print("No content in API response")
+                return ""
         except Exception as e:
-            print("Error getting OpenRouter review: %s", str(e))
+            print(f"Error getting OpenRouter review: {str(e)}")
+            print(f"Full error details: {repr(e)}")
             return ""
 
 class NebiusReviewer(AIReviewer):
     """Nebius API implementation"""
     
     def __init__(self, api_key: Optional[str] = None):
+        api_key = api_key or os.getenv('NEBIUS_API_KEY')
+        if not api_key:
+            raise ValueError("Nebius API key must be provided either directly or via NEBIUS_API_KEY environment variable")
+        
         self.client = OpenAI(
             base_url="https://api.studio.nebius.ai/v1/",
-            api_key=api_key or os.environ.get("NEBIUS_API_KEY")
+            api_key=api_key
         )
 
     def get_review(self, diff_content: str) -> str:
         try:
+            print("Sending request to Nebius API...")
             completion = self.client.chat.completions.create(
                 model="deepseek-ai/DeepSeek-R1",
                 max_tokens=8192,
@@ -112,9 +128,19 @@ class NebiusReviewer(AIReviewer):
                     }
                 ]
             )
-            return completion.choices[0].message.content
+            print("Received response from Nebius API")
+            print(f"Raw response: {completion}")
+            
+            if hasattr(completion.choices[0].message, 'content'):
+                content = completion.choices[0].message.content
+                print(f"Response content: {content}")
+                return content
+            else:
+                print("No content in API response")
+                return ""
         except Exception as e:
-            print("Error getting Nebius review: %s", str(e))
+            print(f"Error getting Nebius review: {str(e)}")
+            print(f"Full error details: {repr(e)}")
             return ""
 
 class PRReviewer:
@@ -134,48 +160,67 @@ class PRReviewer:
             response.raise_for_status()
             return response.text
         except Exception as e:
-            print("Error fetching PR changes: %s", str(e))
+            print(f"Error fetching PR changes: {str(e)}")
+            print(f"Full error details: {repr(e)}")
             return ""
 
     def get_ai_review(self, diff_content: str) -> str:
         """Send the changes to AI for review"""
-        print("Getting AI review for PR changes...")
+        print("\nGetting AI review for PR changes...")
         print("=" * 80)
-        print("diff_content: %s", diff_content)
-        print("[diff_content END]")
+        print(f"Length of diff_content: {len(diff_content)} characters")
+        print("First 500 characters of diff_content:")
+        print(diff_content[:500])
+        print("..." if len(diff_content) > 500 else "")
         print("=" * 80)
         
-        return self.ai_reviewer.get_review(diff_content)
+        result = self.ai_reviewer.get_review(diff_content)
+        if result:
+            print("\nSuccessfully received AI review")
+            print("First 500 characters of review:")
+            print(result[:500])
+            print("..." if len(result) > 500 else "")
+        else:
+            print("\nReceived empty review response")
+        
+        return result
 
 def main():
-    # Choose your AI reviewer implementation
-    # ai_reviewer = OpenRouterReviewer(api_key="your-openrouter-api-key")
-    ai_reviewer = NebiusReviewer()
+    try:
+        # Choose your AI reviewer implementation
+        # ai_reviewer = OpenRouterReviewer()  # Will use OPENROUTER_API_KEY from environment
+        ai_reviewer = NebiusReviewer()  # Will use NEBIUS_API_KEY from environment
 
-    # Initialize reviewer
-    reviewer = PRReviewer(
-        bitbucket_url=BITBUCKET_URL,
-        username=BITBUCKET_USERNAME,
-        password=BITBUCKET_PASSWORD,
-        ai_reviewer=ai_reviewer
-    )
+        # Initialize reviewer
+        reviewer = PRReviewer(
+            bitbucket_url=BITBUCKET_URL,
+            username=BITBUCKET_USERNAME,
+            password=BITBUCKET_PASSWORD,
+            ai_reviewer=ai_reviewer
+        )
 
-    # Get PR changes
-    changes = reviewer.get_pr_changes(PROJECT, REPOSITORY, PR_ID)
-    if not changes:
-        print("Failed to fetch PR changes")
-        return
-    
-    # Get AI review
-    review = reviewer.get_ai_review(changes)
-    if not review:
-        print("Failed to get AI review")
-        return
+        # Get PR changes
+        print("\nFetching PR changes...")
+        changes = reviewer.get_pr_changes(PROJECT, REPOSITORY, PR_ID)
+        if not changes:
+            print("Failed to fetch PR changes")
+            return
+        print("Successfully fetched PR changes")
+        
+        # Get AI review
+        review = reviewer.get_ai_review(changes)
+        if not review:
+            print("Failed to get AI review")
+            return
 
-    print("AI Review:")
-    print("=" * 80)
-    print(review)
-    print("=" * 80)
+        print("\nFinal AI Review:")
+        print("=" * 80)
+        print(review)
+        print("=" * 80)
+
+    except Exception as e:
+        print(f"Error in main: {str(e)}")
+        print(f"Full error details: {repr(e)}")
 
 if __name__ == "__main__":
     main()
