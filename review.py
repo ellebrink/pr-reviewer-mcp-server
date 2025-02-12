@@ -5,18 +5,17 @@ from abc import ABC, abstractmethod
 from atlassian import Bitbucket
 from openai import OpenAI
 from typing import Optional
-import json
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Configuration
-BITBUCKET_URL = "https://api.bitbucket.org/2.0"
-BITBUCKET_USERNAME = "pr-agent-test-repo-admin"
-BITBUCKET_PASSWORD = "ATBB9qnpEKHqmW4DPbsPZNv5PXgj2982DE57"  # App password with PR read access
-PROJECT = "pr-agent-test-repo"
-REPOSITORY = "pr-agent-test"
-PR_ID = 1  # The PR number you want to review
+BITBUCKET_URL = os.getenv('BITBUCKET_URL')
+BITBUCKET_USERNAME = os.getenv('BITBUCKET_USERNAME')
+BITBUCKET_PASSWORD = os.getenv('BITBUCKET_PASSWORD')
+BITBUCKET_PROJECT = os.getenv('BITBUCKET_PROJECT')
+BITBUCKET_REPOSITORY = os.getenv('BITBUCKET_REPOSITORY')
+BITBUCKET_PR_ID = int(os.getenv('BITBUCKET_PR_ID'))
 
 # AI Review Prompt
 REVIEW_PROMPT = """Please review these code changes and provide feedback in the following JSON format:
@@ -87,8 +86,6 @@ class OpenRouterReviewer(AIReviewer):
                     }
                 ]
             )
-            print("Received response from OpenRouter API")
-            print(f"Response: {completion}")
             
             if hasattr(completion.choices[0].message, 'content'):
                 return completion.choices[0].message.content
@@ -128,12 +125,9 @@ class NebiusReviewer(AIReviewer):
                     }
                 ]
             )
-            print("Received response from Nebius API")
-            print(f"Raw response: {completion}")
             
             if hasattr(completion.choices[0].message, 'content'):
                 content = completion.choices[0].message.content
-                print(f"Response content: {content}")
                 return content
             else:
                 print("No content in API response")
@@ -166,14 +160,6 @@ class PRReviewer:
 
     def get_ai_review(self, diff_content: str) -> str:
         """Send the changes to AI for review"""
-        print("\nGetting AI review for PR changes...")
-        print("=" * 80)
-        print(f"Length of diff_content: {len(diff_content)} characters")
-        print("First 500 characters of diff_content:")
-        print(diff_content[:500])
-        print("..." if len(diff_content) > 500 else "")
-        print("=" * 80)
-        
         result = self.ai_reviewer.get_review(diff_content)
         if result:
             print("\nSuccessfully received AI review")
@@ -187,6 +173,12 @@ class PRReviewer:
 
 def main():
     try:
+        # Check for required environment variables
+        required_vars = ['BITBUCKET_URL', 'BITBUCKET_USERNAME', 'BITBUCKET_PASSWORD', 'BITBUCKET_PROJECT', 'BITBUCKET_REPOSITORY']
+        missing_vars = [var for var in required_vars if not os.getenv(var)]
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
         # Choose your AI reviewer implementation
         # ai_reviewer = OpenRouterReviewer()  # Will use OPENROUTER_API_KEY from environment
         ai_reviewer = NebiusReviewer()  # Will use NEBIUS_API_KEY from environment
@@ -201,7 +193,7 @@ def main():
 
         # Get PR changes
         print("\nFetching PR changes...")
-        changes = reviewer.get_pr_changes(PROJECT, REPOSITORY, PR_ID)
+        changes = reviewer.get_pr_changes(BITBUCKET_PROJECT, BITBUCKET_REPOSITORY, BITBUCKET_PR_ID)
         if not changes:
             print("Failed to fetch PR changes")
             return
