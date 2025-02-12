@@ -21,27 +21,27 @@ PR_ID = 1  # The PR number you want to review
 # AI Review Prompt
 REVIEW_PROMPT = """Please review these code changes and provide feedback in the following JSON format:
 
-{
-    "files": {
+{{
+    "files": {{
         "path/to/file1.ext": [
-            {
+            {{
                 "line_number": 23,
                 "line_content": "the actual code line or block being referenced",
                 "comment": "your review comment about this specific code"
-            },
+            }},
             ...
         ],
         "path/to/file2.ext": [
-            {
+            {{
                 "line_number": 15,
                 "line_content": "the actual code line or block being referenced",
                 "comment": "your review comment about this specific code"
-            },
+            }},
             ...
         ],
         ...
-    }
-}
+    }}
+}}
 
 !! IMPORTANT guidelines:
 1. ONLY respond with the JSON format
