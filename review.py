@@ -1,12 +1,17 @@
+import os
 import requests
+from abc import ABC, abstractmethod
 from atlassian import Bitbucket
+from dotenv import load_dotenv
 from openai import OpenAI
+from typing import Optional
+
+load_dotenv()
 
 # Configuration
 BITBUCKET_URL = "https://api.bitbucket.org/2.0"
 BITBUCKET_USERNAME = "pr-agent-test-repo-admin"
 BITBUCKET_PASSWORD = "ATBB9qnpEKHqmW4DPbsPZNv5PXgj2982DE57"  # App password with PR read access
-OPENROUTER_API_KEY = "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"
 PROJECT = "pr-agent-test-repo"
 REPOSITORY = "pr-agent-test"
 PR_ID = 1  # The PR number you want to review
@@ -51,41 +56,26 @@ Important guidelines:
 
 Here is the PR diff: `{diff_content}`"""
 
-class PRReviewer:
-    def __init__(self, bitbucket_url: str, username: str, password: str, openrouter_api_key: str):
-        self.bitbucket = Bitbucket(
-            url=bitbucket_url,
-            username=username,
-            password=password
-        )
-        self.openai_client = OpenAI(
+class AIReviewer(ABC):
+    """Abstract base class for AI code review providers"""
+    
+    @abstractmethod
+    def get_review(self, diff_content: str) -> str:
+        """Get AI review for the provided diff content"""
+        pass
+
+class OpenRouterReviewer(AIReviewer):
+    """OpenRouter API implementation"""
+    
+    def __init__(self, api_key: str):
+        self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=openrouter_api_key
+            api_key=api_key
         )
 
-    def get_pr_changes(self, project: str, repository: str, pr_id: int) -> str:
-        """Get all changes from a pull request and format them as a diff-like string."""
+    def get_review(self, diff_content: str) -> str:
         try:
-            url = f"{self.bitbucket.url}/repositories/{project}/{repository}/pullrequests/{pr_id}/diff"
-            response = requests.get(url, auth=(self.bitbucket.username, self.bitbucket.password))
-            response.raise_for_status()
-            changes = response.text
-            
-            return changes
-        except Exception as e:
-            print("Error fetching PR changes: %s", str(e))
-            return ""
-
-    def get_deepseek_review(self, diff_content: str) -> str:
-        """Send the changes to DeepSeek API for review using OpenAI."""
-        print("Getting AI review for PR changes...")
-        print("=" * 80)
-        print("diff_content: %s", diff_content)
-        print("[diff_content END]")
-        print("=" * 80)
-        
-        try:
-            completion = self.openai_client.chat.completions.create(
+            completion = self.client.chat.completions.create(
                 model="deepseek/deepseek-r1:free",
                 messages=[
                     {
@@ -94,21 +84,80 @@ class PRReviewer:
                     }
                 ]
             )
-
-            print("completion: %s", completion)
-
             return completion.choices[0].message.content
         except Exception as e:
-            print("Error getting DeepSeek review: %s", str(e))
+            print("Error getting OpenRouter review: %s", str(e))
             return ""
 
+class NebiusReviewer(AIReviewer):
+    """Nebius API implementation"""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        self.client = OpenAI(
+            base_url="https://api.studio.nebius.ai/v1/",
+            api_key=api_key or os.environ.get("NEBIUS_API_KEY")
+        )
+
+    def get_review(self, diff_content: str) -> str:
+        try:
+            completion = self.client.chat.completions.create(
+                model="deepseek-ai/DeepSeek-R1",
+                max_tokens=8192,
+                temperature=0.6,
+                top_p=0.95,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": REVIEW_PROMPT.format(diff_content=diff_content)
+                    }
+                ]
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            print("Error getting Nebius review: %s", str(e))
+            return ""
+
+class PRReviewer:
+    def __init__(self, bitbucket_url: str, username: str, password: str, ai_reviewer: AIReviewer):
+        self.bitbucket = Bitbucket(
+            url=bitbucket_url,
+            username=username,
+            password=password
+        )
+        self.ai_reviewer = ai_reviewer
+
+    def get_pr_changes(self, project: str, repository: str, pr_id: int) -> str:
+        """Get all changes from a pull request and format them as a diff-like string."""
+        try:
+            url = f"{self.bitbucket.url}/repositories/{project}/{repository}/pullrequests/{pr_id}/diff"
+            response = requests.get(url, auth=(self.bitbucket.username, self.bitbucket.password))
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            print("Error fetching PR changes: %s", str(e))
+            return ""
+
+    def get_ai_review(self, diff_content: str) -> str:
+        """Send the changes to AI for review"""
+        print("Getting AI review for PR changes...")
+        print("=" * 80)
+        print("diff_content: %s", diff_content)
+        print("[diff_content END]")
+        print("=" * 80)
+        
+        return self.ai_reviewer.get_review(diff_content)
+
 def main():
+    # Choose your AI reviewer implementation
+    # ai_reviewer = OpenRouterReviewer(api_key="your-openrouter-api-key")
+    ai_reviewer = NebiusReviewer()
+
     # Initialize reviewer
     reviewer = PRReviewer(
         bitbucket_url=BITBUCKET_URL,
         username=BITBUCKET_USERNAME,
         password=BITBUCKET_PASSWORD,
-        openrouter_api_key=OPENROUTER_API_KEY
+        ai_reviewer=ai_reviewer
     )
 
     # Get PR changes
@@ -118,7 +167,7 @@ def main():
         return
     
     # Get AI review
-    review = reviewer.get_deepseek_review(changes)
+    review = reviewer.get_ai_review(changes)
     if not review:
         print("Failed to get AI review")
         return
