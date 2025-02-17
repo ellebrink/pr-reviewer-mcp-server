@@ -50,6 +50,7 @@ REVIEW_PROMPT = """Please review these code changes and provide feedback in the 
 5. Find code that does not follow best practices
 6. Suggest performance improvements if possible
 7. Suggest more legible code if possible
+8. Do not include positive feedback
 
 Here is the PR diff: `{diff_content}`"""
 
